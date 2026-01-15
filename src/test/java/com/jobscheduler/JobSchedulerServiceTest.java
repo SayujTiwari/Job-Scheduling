@@ -10,7 +10,11 @@ class JobSchedulerServiceTest {
 
     @Test
     void shouldExecuteJobs() throws Exception {
-        JobScheduler scheduler = new JobSchedulerService(2, 10);
+        JobSchedulerConfig config = new JobSchedulerConfig.Builder()
+                .poolSize(2)
+                .queueCapacity(10)
+                .build();
+        JobScheduler scheduler = new JobSchedulerService(config);
         
         Future<String> future = scheduler.submitJob(() -> {
             try { Thread.sleep(50); } catch (InterruptedException e) {}
@@ -22,26 +26,27 @@ class JobSchedulerServiceTest {
 
     @Test
     void shouldHandleBackpressure() throws Exception {
-        // Tiny pool and queue to force backpressure quickly
-        int poolSize = 1;
-        int queueCapacity = 1;
-        JobSchedulerService scheduler = new JobSchedulerService(poolSize, queueCapacity);
+        JobSchedulerConfig config = new JobSchedulerConfig.Builder()
+                .poolSize(1)
+                .queueCapacity(1)
+                .build();
+        JobSchedulerService scheduler = new JobSchedulerService(config);
         
         CountDownLatch latch = new CountDownLatch(1);
         AtomicInteger completedTasks = new AtomicInteger(0);
 
-        // 1. Fill the pool (1 thread busy)
+        // 1. Fill the pool
         scheduler.submitJob(() -> {
             try { latch.await(); } catch (InterruptedException e) {}
             completedTasks.incrementAndGet();
         });
 
-        // 2. Fill the queue (1 slot taken)
+        // 2. Fill the queue
         scheduler.submitJob(() -> {
             completedTasks.incrementAndGet();
         });
 
-        // 3. This 3rd task should trigger CallerRunsPolicy (executes in THIS thread)
+        // 3. Trigger backpressure
         String currentThreadName = Thread.currentThread().getName();
         final String[] taskThreadName = new String[1];
 
@@ -50,21 +55,23 @@ class JobSchedulerServiceTest {
             completedTasks.incrementAndGet();
         });
 
-        // If CallerRunsPolicy worked, the task ran in the main test thread
-        assertEquals(currentThreadName, taskThreadName[0], "Task should run in caller thread");
-        assertEquals(1, completedTasks.get(), "Only the caller task should be done so far");
+        assertEquals(currentThreadName, taskThreadName[0]);
+        assertEquals(1, completedTasks.get());
 
-        latch.countDown(); // Release the rest
+        latch.countDown();
         scheduler.shutdown();
     }
 
     @Test
     void shouldRetryFailedJobs() throws Exception {
-        // Setup: 3 retries allowed, 10ms wait time
-        JobSchedulerService scheduler = new JobSchedulerService(1, 10, 3, 10);
+        JobSchedulerConfig config = new JobSchedulerConfig.Builder()
+                .poolSize(1)
+                .maxRetries(3)
+                .baseRetryDelayMs(10)
+                .build();
+        JobSchedulerService scheduler = new JobSchedulerService(config);
         AtomicInteger attempts = new AtomicInteger(0);
 
-        // A job that fails twice, then works
         Future<String> future = scheduler.submitJob(() -> {
             int currentAttempt = attempts.incrementAndGet();
             if (currentAttempt <= 2) {
@@ -72,10 +79,7 @@ class JobSchedulerServiceTest {
             }
         });
 
-        // Should return success eventually
         assertEquals("Success", future.get(1, TimeUnit.SECONDS));
-        
-        // Check that it actually ran 3 times
         assertEquals(3, attempts.get());
         
         scheduler.shutdown();

@@ -8,38 +8,31 @@ import java.util.concurrent.*;
 public class JobSchedulerService implements JobScheduler {
     private static final Logger logger = LoggerFactory.getLogger(JobSchedulerService.class);
     private final ThreadPoolExecutor executor;
-    
-    // Config for retries
-    private final int maxRetries;
-    private final long baseRetryDelayMs;
+    private final JobSchedulerConfig config;
 
-    public JobSchedulerService(int poolSize, int queueCapacity) {
-        // Default retry settings: 3 tries, starting at 50ms wait
-        this(poolSize, queueCapacity, 3, 50);
-    }
+    public JobSchedulerService(JobSchedulerConfig config) {
+        this.config = config;
 
-    public JobSchedulerService(int poolSize, int queueCapacity, int maxRetries, long baseRetryDelayMs) {
-        this.maxRetries = maxRetries;
-        this.baseRetryDelayMs = baseRetryDelayMs;
-
-        // Use a fixed pool to reuse threads (faster than creating new ones)
-        // ArrayBlockingQueue saves memory compared to a linked list
+        // Use config values for the pool and queue
         this.executor = new ThreadPoolExecutor(
-                poolSize,
-                poolSize,
+                config.getPoolSize(),
+                config.getPoolSize(),
                 0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(queueCapacity)
+                new ArrayBlockingQueue<>(config.getQueueCapacity())
         );
 
-        // If the queue is full, make the submitting thread do the work.
-        // This naturally slows down the sender so we don't crash.
+        // Slow down the sender if the queue is full
         this.executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     @Override
     public Future<String> submitJob(Runnable job) {
-        // Wrap the user's job in our retry logic before sending it to the pool
-        RetryableTask wrappedJob = new RetryableTask(job, maxRetries, baseRetryDelayMs);
+        // Use config values for the retry wrapper
+        RetryableTask wrappedJob = new RetryableTask(
+                job, 
+                config.getMaxRetries(), 
+                config.getBaseRetryDelayMs()
+        );
         return executor.submit(wrappedJob, "Success");
     }
 
