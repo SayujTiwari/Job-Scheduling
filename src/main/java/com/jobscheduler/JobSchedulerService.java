@@ -8,12 +8,22 @@ import java.util.concurrent.*;
 public class JobSchedulerService implements JobScheduler {
     private static final Logger logger = LoggerFactory.getLogger(JobSchedulerService.class);
     private final ThreadPoolExecutor executor;
+    
+    // Config for retries
+    private final int maxRetries;
+    private final long baseRetryDelayMs;
 
     public JobSchedulerService(int poolSize, int queueCapacity) {
-        // 1. High-Throughput: ThreadPoolExecutor reuses threads to avoid creation overhead.
-        //    We set corePoolSize == maximumPoolSize to keep a fixed worker set active.
-        // 2. Backpressure: ArrayBlockingQueue is bounded and has less memory overhead (no node objects)
-        //    than LinkedBlockingQueue, which is better for high-throughput/low-GC.
+        // Default retry settings: 3 tries, starting at 50ms wait
+        this(poolSize, queueCapacity, 3, 50);
+    }
+
+    public JobSchedulerService(int poolSize, int queueCapacity, int maxRetries, long baseRetryDelayMs) {
+        this.maxRetries = maxRetries;
+        this.baseRetryDelayMs = baseRetryDelayMs;
+
+        // Use a fixed pool to reuse threads (faster than creating new ones)
+        // ArrayBlockingQueue saves memory compared to a linked list
         this.executor = new ThreadPoolExecutor(
                 poolSize,
                 poolSize,
@@ -21,15 +31,16 @@ public class JobSchedulerService implements JobScheduler {
                 new ArrayBlockingQueue<>(queueCapacity)
         );
 
-        // 3. Backpressure (Congestion Control):
-        //    If the queue is full, CallerRunsPolicy makes the *submitting* thread execute the task.
-        //    This effectively slows down the producer ("throttling") prevents memory overflow.
+        // If the queue is full, make the submitting thread do the work.
+        // This naturally slows down the sender so we don't crash.
         this.executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     @Override
     public Future<String> submitJob(Runnable job) {
-        return executor.submit(job, "Success");
+        // Wrap the user's job in our retry logic before sending it to the pool
+        RetryableTask wrappedJob = new RetryableTask(job, maxRetries, baseRetryDelayMs);
+        return executor.submit(wrappedJob, "Success");
     }
 
     @Override

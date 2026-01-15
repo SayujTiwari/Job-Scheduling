@@ -57,4 +57,27 @@ class JobSchedulerServiceTest {
         latch.countDown(); // Release the rest
         scheduler.shutdown();
     }
+
+    @Test
+    void shouldRetryFailedJobs() throws Exception {
+        // Setup: 3 retries allowed, 10ms wait time
+        JobSchedulerService scheduler = new JobSchedulerService(1, 10, 3, 10);
+        AtomicInteger attempts = new AtomicInteger(0);
+
+        // A job that fails twice, then works
+        Future<String> future = scheduler.submitJob(() -> {
+            int currentAttempt = attempts.incrementAndGet();
+            if (currentAttempt <= 2) {
+                throw new RuntimeException("Fail!"); 
+            }
+        });
+
+        // Should return success eventually
+        assertEquals("Success", future.get(1, TimeUnit.SECONDS));
+        
+        // Check that it actually ran 3 times
+        assertEquals(3, attempts.get());
+        
+        scheduler.shutdown();
+    }
 }
