@@ -27,13 +27,17 @@ public class JobSchedulerService implements JobScheduler {
 
     @Override
     public Future<String> submitJob(Runnable job) {
-        // Use config values for the retry wrapper
-        RetryableTask wrappedJob = new RetryableTask(
-                job, 
+        // First, wrap the job with a timeout guard
+        Runnable timeoutGuardedJob = new TimeoutTask(job, config.getTimeoutMs());
+        
+        // Then, wrap it with retry logic
+        RetryableTask retryableJob = new RetryableTask(
+                timeoutGuardedJob, 
                 config.getMaxRetries(), 
                 config.getBaseRetryDelayMs()
         );
-        return executor.submit(wrappedJob, "Success");
+        
+        return executor.submit(retryableJob, "Success");
     }
 
     @Override

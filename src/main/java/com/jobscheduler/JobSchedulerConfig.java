@@ -9,12 +9,14 @@ public class JobSchedulerConfig {
     private final int queueCapacity;
     private final int maxRetries;
     private final long baseRetryDelayMs;
+    private final long timeoutMs;
 
     private JobSchedulerConfig(Builder builder) {
         this.poolSize = builder.poolSize;
         this.queueCapacity = builder.queueCapacity;
         this.maxRetries = builder.maxRetries;
         this.baseRetryDelayMs = builder.baseRetryDelayMs;
+        this.timeoutMs = builder.timeoutMs;
     }
 
     // Getters
@@ -22,13 +24,15 @@ public class JobSchedulerConfig {
     public int getQueueCapacity() { return queueCapacity; }
     public int getMaxRetries() { return maxRetries; }
     public long getBaseRetryDelayMs() { return baseRetryDelayMs; }
+    public long getTimeoutMs() { return timeoutMs; }
 
     // Builder Class
     public static class Builder {
-        private int poolSize = 10;          // Default: 10 threads
-        private int queueCapacity = 100;    // Default: 100 jobs buffer
-        private int maxRetries = 3;         // Default: 3 retries
-        private long baseRetryDelayMs = 50; // Default: 50ms wait
+        private int poolSize = 10;
+        private int queueCapacity = 100;
+        private int maxRetries = 3;
+        private long baseRetryDelayMs = 50;
+        private long timeoutMs = 0; // Default: No timeout
 
         public Builder poolSize(int poolSize) {
             this.poolSize = poolSize;
@@ -47,6 +51,11 @@ public class JobSchedulerConfig {
 
         public Builder baseRetryDelayMs(long baseRetryDelayMs) {
             this.baseRetryDelayMs = baseRetryDelayMs;
+            return this;
+        }
+
+        public Builder timeoutMs(long timeoutMs) {
+            this.timeoutMs = timeoutMs;
             return this;
         }
 

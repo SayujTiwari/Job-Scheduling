@@ -84,4 +84,38 @@ class JobSchedulerServiceTest {
         
         scheduler.shutdown();
     }
+
+    @Test
+    void shouldTimeoutSlowJobs() throws Exception {
+        // Setup: Timeout after 100ms, 2 retries
+        JobSchedulerConfig config = new JobSchedulerConfig.Builder()
+                .poolSize(1)
+                .timeoutMs(100)
+                .maxRetries(2)
+                .baseRetryDelayMs(10)
+                .build();
+        JobSchedulerService scheduler = new JobSchedulerService(config);
+        AtomicInteger attempts = new AtomicInteger(0);
+
+        // This job takes 500ms, but timeout is 100ms
+        Future<String> future = scheduler.submitJob(() -> {
+            attempts.incrementAndGet();
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                // Thread was killed by timeout
+                return;
+            }
+        });
+
+        // The job should fail after all retries
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> {
+            future.get(2, TimeUnit.SECONDS);
+        });
+
+        assertTrue(exception.getMessage().contains("Task timed out"), "Should be a timeout error");
+        assertEquals(3, attempts.get(), "Should have tried 3 times (1 initial + 2 retries)");
+
+        scheduler.shutdown();
+    }
 }
