@@ -26,14 +26,17 @@ public class RetryableTask implements Runnable {
         while (true) {
             try {
                 task.run();
+                MetricsRegistry.getInstance().incrementCompletedJobs(); // Track Success
                 return; // Worked! We are done.
             } catch (RuntimeException e) {
                 attempt++;
                 if (attempt > maxRetries) {
                     logger.error("Task failed after {} attempts. Giving up.", attempt, e);
+                    MetricsRegistry.getInstance().incrementFailedJobs(); // Track Final Failure
                     throw e; // Retried enough, now we actually fail.
                 }
 
+                MetricsRegistry.getInstance().incrementRetries(); // Track Retry
                 handleBackoff(attempt);
             }
         }
